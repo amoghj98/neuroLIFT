@@ -72,7 +72,7 @@ class datasetGenerator(object):
 	
 
 if __name__ == "__main__":
-	d = datasetGenerator(n_samples=1000)
+	d = datasetGenerator(n_samples=20000)
 	# d.get_labels()
 	# d.debug()
 	d.write_dataset()
