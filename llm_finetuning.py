@@ -6,6 +6,9 @@ from argConfig import config
 from model import LLMForClassification
 from dataset import neuroLIFTDataset
 
+import random
+import copy
+
 import time
 import h5py
 import sys
@@ -33,7 +36,6 @@ args = config()
 #
 datasetPath = '/scratch/gautschi/joshi157/finetuningDatasets/'
 train_dataset = 'neuroLIFT.hdf5'
-test_dataset = 'neuroLIFT_test.hdf5'
 #
 file = datasetPath + train_dataset
 f = h5py.File(file, 'r')
@@ -44,17 +46,6 @@ obst_position = f['obst_pos'][:]
 obst_velocity = f['obst_vel'][:]
 t_to_col = f['t_to_col'][:]
 labels = f['labels'][:]
-f.close()
-#
-file = datasetPath + test_dataset
-f = h5py.File(file, 'r')
-prompts_test = [p.decode('utf-8', 'ignore') for p in f['prompts'][:]]
-agent_position_test = f['agent_pos'][:]
-agent_velocity_test = f['agent_vel'][:]
-obst_position_test = f['obst_pos'][:]
-obst_velocity_test = f['obst_vel'][:]
-t_to_col_test = f['t_to_col'][:]
-labels_test = f['labels'][:]
 f.close()
 #
 label_to_token = {
@@ -68,19 +59,21 @@ token_to_label = {
 ##
 p_idxs = np.random.randint(0, len(prompts), t_to_col.shape[0])
 #
-train_prompts = [f"{prompts[p_idxs[i]]} The robot's position is {agent_position[i]} and it's velocity is {agent_velocity[i]}, while the target's position is {obst_position[i]} and it's velocity is {obst_velocity[i]}. Answer only yes or no." for i in range(p_idxs.shape[0])]
+train_prompts = [f"A quadrotor drone is preparing to maneuver. The drone's max velocity is 17.53172 m/s, the drone's max acceleration is 1.25214 m/s^2. The drone's x-position must stay within [-1.2, 1.2] meters, the drone's y-position should stay with [0.4, 1.2] meters, and the drone's z-position must stay within [0.0, 1.4] meters. The drone observes the following: The obstacle is a moving ring, obstacle position is {obst_position[i]} meters, obstacle velocity is {obst_velocity[i]} m/s, drone position is {agent_position[i]}, drone velocity is {agent_velocity[i]}. Use kinematic feasibility is determine if {prompts[p_idxs[i]]} Your final answer should be a single token - either [LABEL_0] for No or [LABEL_1] for Yes followed by a period" for i in range(p_idxs.shape[0])]
 #
-p_idxs = np.random.randint(0, len(prompts_test), t_to_col_test.shape[0])
-#
-test_prompts = [f"{prompts_test[p_idxs[i]]} The robot's position is {agent_position_test[i]} and it's velocity is {agent_velocity_test[i]}, while the target's position is {obst_position_test[i]} and it's velocity is {obst_velocity_test[i]}. Answer only yes or no." for i in range(p_idxs.shape[0])]
 
 # construct dataset for LLM
+train_split = 0.9
 data = []
-test = []
 for i in range(len(train_prompts)):
     data.append({"input": train_prompts[i], "label":labels[i].item(), "label_token":label_to_token[labels[i].item()]})
-for i in range(len(test_prompts)):
-    test.append({"input": test_prompts[i], "label":labels_test[i].item(), "label_token":label_to_token[labels_test[i].item()]})
+
+# split datasets
+train_set_length = round(len(data) * train_split)
+train_data = random.sample(data, train_set_length)
+test_data = copy.deepcopy(data)
+for d in train_data:
+    test_data.remove(d)
 
 # Download the tokenizer and model
 tokenizer = AutoTokenizer.from_pretrained(args.model, token=secret.huggingface_token)
@@ -94,16 +87,19 @@ model = AutoModelForSequenceClassification.from_pretrained(
     label2id=token_to_label,
     num_labels=2,
     pad_token_id=2,
+    ignore_mismatched_sizes=True,
     # quantization_config=BitsAndBytesConfig(load_in_8bit=True),  # Use 8-bit precision (optional, saves memory)
 )
 #
 tokenizer.add_special_tokens({'pad_token': '[PAD]'})
 model.resize_token_embeddings(len(tokenizer))
 #
+# for param in model.model.layers[:-4].parameters():
+#     param.requires_grad = False
 
 # Tokenized dataset
-tokenized_dataset = preprocess_fuction(data)
-tokenized_testset = preprocess_fuction(test)
+tokenized_dataset = preprocess_fuction(train_data)
+tokenized_testset = preprocess_fuction(test_data)
 
 #
 train_set = neuroLIFTDataset(tokenized_dataset)
@@ -131,7 +127,7 @@ trainer = Trainer(
     # model=model,
     args=training_args,
     train_dataset=train_set,
-    eval_dataset=train_set,
+    eval_dataset=test_set,
     tokenizer=tokenizer,
     compute_metrics=compute_metrics,
 )

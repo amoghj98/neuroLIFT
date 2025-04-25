@@ -55,10 +55,10 @@ class datasetGenerator(object):
 
 	def write_dataset(self):
 		self.get_labels()
-		prompts = ["Is it feasible to navigate through the obstacle?", "Can the obstruction be negotiated with success?", "Can we effectively traverse the barrier in place?", "Is it possible to find a way past the hurdle ahead?", "Can the roadblock be bypassed with ease?", "Is there a clear strategy to navigate this challenge?"]
+		prompts = ["Is it feasible to navigate through the obstacle?", "the drone can negotiate the obstruction successfully?", "the drone can effectively traverse the barrier in place?", "it is possible to find a way past the hurdle ahead?", "the drone can bypass the roadblock with ease?", "there is a clear strategy to navigate this challenge?"]
 		prompt_set = np.array([p.encode('ascii', 'ignore') for p in prompts])
 		datasetPath = '/scratch/gautschi/joshi157/finetuningDatasets/'
-		filename = 'neuroLIFT_test.hdf5'
+		filename = 'neuroLIFT.hdf5'
 		file = datasetPath + filename
 		f = h5py.File(file, 'a')
 		f.create_dataset("prompts", data=prompt_set, dtype=prompt_set.dtype, chunks=True)
@@ -72,7 +72,7 @@ class datasetGenerator(object):
 	
 
 if __name__ == "__main__":
-	d = datasetGenerator(n_samples=20000)
+	d = datasetGenerator(n_samples=5000)
 	# d.get_labels()
 	# d.debug()
 	d.write_dataset()
